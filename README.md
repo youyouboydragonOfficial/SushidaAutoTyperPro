@@ -36,11 +36,16 @@
 
 ---
 
-## 🚀 使い方 (Quick Start)
+## 🚀 使い方・起動方法 (Quick Start)
 
-### インストール不要！ダウンロードしてすぐ使えます
-1. [GitHub Releases](https://github.com/youyouboydragonOfficial/SushidaAutoTyperPro/releases) から最新の `SushidaAutoTyperPro-v1.0.0-win-x64.zip` または `SushidaAutoTyper.exe` をダウンロードします。
-2. 解凍して `SushidaAutoTyper.exe` を起動します。
+ダウンロードした `SushidaAutoTyperPro-v1.0.0-win-x64.zip` を右クリックして「すべて展開（解凍）」します。
+
+### 方式A: インストールせずに直接起動する（ポータブル実行）
+- 解凍したフォルダ内の **`Run-Without-Installation.cmd`** または **`SushidaAutoTyper.exe`** をダブルクリックするだけで、インストール不要ですぐに起動できます！
+
+### 方式B: パソコンにワンクリックインストールする
+- 解凍したフォルダ内の **`Install-SushidaAutoTyper.cmd`** をダブルクリックします。
+- 自動的にアプリが配置され、デスクトップおよびスタートメニューに「SushidaAutoTyper Pro」のショートカットアイコンが作成されます。
 
 ### 寿司打での使用手順
 1. ブラウザで [寿司打](http://typingx0.net/sushida/) を開きます。
