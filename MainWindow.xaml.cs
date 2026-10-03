@@ -1,0 +1,361 @@
+using System;
+using System.Drawing;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Interop;
+using System.Windows.Media;
+using SushidaAutoTyper.Services;
+
+namespace SushidaAutoTyper
+{
+    public partial class MainWindow : Window
+    {
+        private const int HOTKEY_ID_START = 9001;
+        private const int HOTKEY_ID_PAUSE = 9002;
+        private const int HOTKEY_ID_STOP = 9003;
+
+        private const uint VK_F8 = 0x77;
+        private const uint VK_F9 = 0x78;
+        private const uint VK_F10 = 0x79;
+
+        private HwndSource? _hwndSource;
+        private readonly OcrEngineService _ocrEngineService;
+
+        private Int32Rect _selectedRegion;
+        private bool _isRegionSelected = false;
+
+        private CancellationTokenSource? _typingCancellationTokenSource;
+        private bool _isRunning = false;
+        private bool _isPaused = false;
+        private int _typedCharCount = 0;
+        private string _lastOcrText = string.Empty;
+
+        public MainWindow()
+        {
+            InitializeComponent();
+            _ocrEngineService = new OcrEngineService();
+            Loaded += MainWindow_Loaded;
+            Unloaded += MainWindow_Unloaded;
+
+            Log("🚀 SushidaAutoTyper Pro が起動しました。F8 キーでいつでもタイピングを開始できます。");
+        }
+
+        private void MainWindow_Loaded(object sender, RoutedEventArgs e)
+        {
+            // Register Global Hotkeys
+            IntPtr handle = new WindowInteropHelper(this).Handle;
+            _hwndSource = HwndSource.FromHwnd(handle);
+            _hwndSource?.AddHook(HwndHook);
+
+            NativeKeyboard.RegisterHotKey(handle, HOTKEY_ID_START, 0, VK_F8);
+            NativeKeyboard.RegisterHotKey(handle, HOTKEY_ID_PAUSE, 0, VK_F9);
+            NativeKeyboard.RegisterHotKey(handle, HOTKEY_ID_STOP, 0, VK_F10);
+
+            Log("キーボードフック登録完了: [F8] 開始 | [F9] 一時停止 | [F10] 緊急停止");
+        }
+
+        private void MainWindow_Unloaded(object sender, RoutedEventArgs e)
+        {
+            IntPtr handle = new WindowInteropHelper(this).Handle;
+            NativeKeyboard.UnregisterHotKey(handle, HOTKEY_ID_START);
+            NativeKeyboard.UnregisterHotKey(handle, HOTKEY_ID_PAUSE);
+            NativeKeyboard.UnregisterHotKey(handle, HOTKEY_ID_STOP);
+            _hwndSource?.RemoveHook(HwndHook);
+        }
+
+        private IntPtr HwndHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+        {
+            const int WM_HOTKEY = 0x0312;
+            if (msg == WM_HOTKEY)
+            {
+                int id = wParam.ToInt32();
+                if (id == HOTKEY_ID_START)
+                {
+                    Dispatcher.Invoke(() => StartAutoTyping());
+                    handled = true;
+                }
+                else if (id == HOTKEY_ID_PAUSE)
+                {
+                    Dispatcher.Invoke(() => TogglePauseAutoTyping());
+                    handled = true;
+                }
+                else if (id == HOTKEY_ID_STOP)
+                {
+                    Dispatcher.Invoke(() => StopAutoTyping());
+                    handled = true;
+                }
+            }
+            return IntPtr.Zero;
+        }
+
+        #region Region Selection
+
+        private void SelectRegionBtn_Click(object sender, RoutedEventArgs e)
+        {
+            OverlayWindow overlay = new OverlayWindow();
+            if (overlay.ShowDialog() == true && overlay.IsRegionSelected)
+            {
+                _selectedRegion = overlay.SelectedRegion;
+                _isRegionSelected = true;
+                RegionStatusText.Text = $"選択範囲: ({_selectedRegion.X}, {_selectedRegion.Y}) | サイズ: {_selectedRegion.Width} x {_selectedRegion.Height}";
+                Log($"画面領域を設定しました: X={_selectedRegion.X}, Y={_selectedRegion.Y}, W={_selectedRegion.Width}, H={_selectedRegion.Height}");
+            }
+        }
+
+        #endregion
+
+        #region Auto-Typing Logic
+
+        private void StartBtn_Click(object sender, RoutedEventArgs e) => StartAutoTyping();
+        private void PauseBtn_Click(object sender, RoutedEventArgs e) => TogglePauseAutoTyping();
+        private void StopBtn_Click(object sender, RoutedEventArgs e) => StopAutoTyping();
+
+        private void StartAutoTyping()
+        {
+            if (_isRunning) return;
+
+            _isRunning = true;
+            _isPaused = false;
+            _typedCharCount = 0;
+            UpdateTypedCountDisplay();
+
+            StartBtn.IsEnabled = false;
+            PauseBtn.IsEnabled = true;
+            StopBtn.IsEnabled = true;
+
+            _typingCancellationTokenSource = new CancellationTokenSource();
+            var token = _typingCancellationTokenSource.Token;
+
+            // Determine mode (Tab index: 0 = OCR Mode, 1 = Custom Text Mode)
+            int selectedTab = 0;
+            Dispatcher.Invoke(() =>
+            {
+                TabControl? tc = FindVisualChild<TabControl>(this);
+                if (tc != null) selectedTab = tc.SelectedIndex;
+            });
+
+            if (selectedTab == 0)
+            {
+                if (!_isRegionSelected)
+                {
+                    Log("⚠️ エラー: 画面OCR領域が選択されていません。「🎯 領域を選択」ボタンから対象領域を指定してください。");
+                    StopAutoTyping();
+                    return;
+                }
+                Log("▶ [OCRモード] 自動タイピングを開始しました (F8)");
+                Task.Run(() => RunOcrAutoTypingLoop(token), token);
+            }
+            else
+            {
+                string textToType = string.Empty;
+                Dispatcher.Invoke(() => textToType = CustomScriptInput.Text);
+
+                if (string.IsNullOrWhiteSpace(textToType))
+                {
+                    Log("⚠️ エラー: 自動送信するテキストが入力されていません。");
+                    StopAutoTyping();
+                    return;
+                }
+                Log("▶ [カスタムテキストモード] 高速自動タイピングを開始しました (F8)");
+                Task.Run(() => RunCustomTextTypingLoop(textToType, token), token);
+            }
+        }
+
+        private void TogglePauseAutoTyping()
+        {
+            if (!_isRunning) return;
+            _isPaused = !_isPaused;
+            PauseBtn.Content = _isPaused ? "▶ 再開 (F9)" : "⏸ 一時停止 (F9)";
+            Log(_isPaused ? "⏸ 自動タイピングを一時停止しました (F9)" : "▶ 自動タイピングを再開しました (F9)");
+        }
+
+        private void StopAutoTyping()
+        {
+            if (!_isRunning) return;
+
+            _typingCancellationTokenSource?.Cancel();
+            _isRunning = false;
+            _isPaused = false;
+
+            StartBtn.IsEnabled = true;
+            PauseBtn.IsEnabled = false;
+            StopBtn.IsEnabled = false;
+            PauseBtn.Content = "⏸ 一時停止 (F9)";
+
+            Log("⏹ 自動タイピングを停止しました (F10)");
+        }
+
+        private async Task RunOcrAutoTypingLoop(CancellationToken token)
+        {
+            int scanInterval = 150;
+            bool useUnity = true;
+
+            Dispatcher.Invoke(() =>
+            {
+                scanInterval = (int)ScanIntervalSlider.Value;
+                useUnity = UnityHardwareModeCheckBox.IsChecked == true;
+            });
+
+            while (!token.IsCancellationRequested && _isRunning)
+            {
+                if (_isPaused)
+                {
+                    await Task.Delay(100, token);
+                    continue;
+                }
+
+                try
+                {
+                    string recognizedText = await _ocrEngineService.RecognizeScreenRegionAsync(
+                        _selectedRegion.X, _selectedRegion.Y, _selectedRegion.Width, _selectedRegion.Height);
+
+                    if (!string.IsNullOrWhiteSpace(recognizedText) && recognizedText != _lastOcrText)
+                    {
+                        _lastOcrText = recognizedText;
+                        Dispatcher.Invoke(() => OcrPreviewBox.Text = recognizedText);
+
+                        int delay = 20;
+                        Dispatcher.Invoke(() => delay = (int)DelaySlider.Value);
+
+                        foreach (char ch in recognizedText)
+                        {
+                            if (token.IsCancellationRequested || !_isRunning || _isPaused) break;
+
+                            NativeKeyboard.SendChar(ch, useUnity);
+                            Interlocked.Increment(ref _typedCharCount);
+                            Dispatcher.Invoke(UpdateTypedCountDisplay);
+
+                            if (delay > 0)
+                            {
+                                await Task.Delay(delay, token);
+                            }
+                        }
+                    }
+                }
+                catch (TaskCanceledException) { break; }
+                catch (Exception ex)
+                {
+                    Log($"OCRエラー: {ex.Message}");
+                }
+
+                await Task.Delay(scanInterval, token);
+            }
+        }
+
+        private async Task RunCustomTextTypingLoop(string text, CancellationToken token)
+        {
+            int delay = 20;
+            bool useUnity = true;
+            bool humanize = false;
+
+            Dispatcher.Invoke(() =>
+            {
+                delay = (int)DelaySlider.Value;
+                useUnity = UnityHardwareModeCheckBox.IsChecked == true;
+                humanize = HumanizerCheckBox.IsChecked == true;
+            });
+
+            Random rnd = new Random();
+
+            foreach (char ch in text)
+            {
+                if (token.IsCancellationRequested || !_isRunning) break;
+
+                while (_isPaused && !token.IsCancellationRequested)
+                {
+                    await Task.Delay(100, token);
+                }
+
+                NativeKeyboard.SendChar(ch, useUnity);
+                Interlocked.Increment(ref _typedCharCount);
+                Dispatcher.Invoke(UpdateTypedCountDisplay);
+
+                int currentDelay = delay;
+                if (humanize && delay > 10)
+                {
+                    currentDelay += rnd.Next(-8, 9);
+                    currentDelay = Math.Max(1, currentDelay);
+                }
+
+                if (currentDelay > 0)
+                {
+                    await Task.Delay(currentDelay, token);
+                }
+            }
+
+            Dispatcher.Invoke(() => StopAutoTyping());
+        }
+
+        #endregion
+
+        #region UI Event Handlers & Helpers
+
+        private void ScanIntervalSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (ScanIntervalValText != null)
+                ScanIntervalValText.Text = $"{ (int)e.NewValue } ms";
+        }
+
+        private void DelaySlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (DelayValText != null)
+            {
+                int delayMs = (int)e.NewValue;
+                int cpm = delayMs > 0 ? 60000 / delayMs : 60000;
+                DelayValText.Text = $"{delayMs} ms ({cpm:N0} CPM)";
+            }
+        }
+
+        private void ConvertKanaBtn_Click(object sender, RoutedEventArgs e)
+        {
+            if (!string.IsNullOrEmpty(CustomScriptInput.Text))
+            {
+                string converted = RomajiConverter.ConvertToRomaji(CustomScriptInput.Text);
+                CustomScriptInput.Text = converted;
+                Log("ひらがな文をローマ字に自動変換しました。");
+            }
+        }
+
+        private void ClearTextBtn_Click(object sender, RoutedEventArgs e)
+        {
+            CustomScriptInput.Clear();
+        }
+
+        private void UpdateTypedCountDisplay()
+        {
+            TypedCountText.Text = $"{_typedCharCount:N0} chars";
+        }
+
+        private void Log(string message)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                string timestamp = DateTime.Now.ToString("HH:mm:ss");
+                LogConsole.AppendText($"[{timestamp}] {message}\n");
+                LogConsole.ScrollToEnd();
+            });
+        }
+
+        private static T? FindVisualChild<T>(DependencyObject? obj) where T : DependencyObject
+        {
+            if (obj == null) return null;
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(obj); i++)
+            {
+                DependencyObject child = VisualTreeHelper.GetChild(obj, i);
+                if (child != null && child is T t)
+                    return t;
+                else if (child != null)
+                {
+                    T? childOfChild = FindVisualChild<T>(child);
+                    if (childOfChild != null)
+                        return childOfChild;
+                }
+            }
+            return null;
+        }
+
+        #endregion
+    }
+}
