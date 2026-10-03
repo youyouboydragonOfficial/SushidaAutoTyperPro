@@ -47,7 +47,7 @@ namespace SushidaAutoTyper.Services
         }
 
         /// <summary>
-        /// Captures screen region and recognizes text.
+        /// Captures screen region and recognizes text safely without exceeding MaxImageDimension (2600px).
         /// </summary>
         public async Task<(string rawText, string romajiText)> RecognizeScreenRegionAsync(int x, int y, int width, int height, bool extractRomajiOnly = true)
         {
@@ -59,7 +59,7 @@ namespace SushidaAutoTyper.Services
                 using var bmp = CaptureScreenRegion(x, y, width, height);
                 if (bmp == null) return (string.Empty, string.Empty);
 
-                using var scaledBmp = ScaleBitmap(bmp, 2);
+                using var scaledBmp = ScaleBitmapSafely(bmp);
                 using var softwareBmp = await ConvertBitmapToSoftwareBitmapAsync(scaledBmp);
 
                 if (softwareBmp == null) return (string.Empty, string.Empty);
@@ -96,10 +96,27 @@ namespace SushidaAutoTyper.Services
             }
         }
 
-        private Bitmap ScaleBitmap(Bitmap original, int factor)
+        /// <summary>
+        /// Scales bitmap dynamically while strictly respecting Windows Media OCR's MaxImageDimension (2500px safety limit).
+        /// </summary>
+        private Bitmap ScaleBitmapSafely(Bitmap original)
         {
-            int newW = original.Width * factor;
-            int newH = original.Height * factor;
+            const double maxDimension = 2400.0;
+            double scale = 2.0;
+
+            if (original.Width * scale > maxDimension)
+            {
+                scale = maxDimension / original.Width;
+            }
+            if (original.Height * scale > maxDimension)
+            {
+                scale = Math.Min(scale, maxDimension / original.Height);
+            }
+            scale = Math.Max(1.0, scale);
+
+            int newW = (int)(original.Width * scale);
+            int newH = (int)(original.Height * scale);
+
             Bitmap scaled = new Bitmap(newW, newH, PixelFormat.Format32bppArgb);
             using (Graphics g = Graphics.FromImage(scaled))
             {
@@ -129,7 +146,6 @@ namespace SushidaAutoTyper.Services
             StringBuilder sb = new StringBuilder();
             foreach (char c in rawText)
             {
-                // Fullwidth ASCII to Halfwidth conversion
                 if (c >= 0xFF01 && c <= 0xFF5E)
                 {
                     sb.Append((char)(c - 0xEE00));
@@ -151,7 +167,6 @@ namespace SushidaAutoTyper.Services
         {
             if (string.IsNullOrWhiteSpace(text)) return string.Empty;
 
-            // Extract lower/upper ASCII characters and common symbols used in Romaji typing
             var matches = Regex.Matches(text, @"[a-zA-Z0-9\-\,\.\?\!\'\ ]+");
             StringBuilder sb = new StringBuilder();
             foreach (Match match in matches)
