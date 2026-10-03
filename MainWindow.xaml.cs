@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Threading;
@@ -54,6 +55,81 @@ namespace SushidaAutoTyper
             NativeKeyboard.RegisterHotKey(handle, HOTKEY_ID_STOP, 0, VK_F10);
 
             Log("キーボードフック登録完了: [F8] 開始 | [F9] 一時停止 | [F10] 緊急停止");
+
+            // Check if Desktop shortcut already exists
+            CheckDesktopShortcutPrompt();
+        }
+
+        private void CheckDesktopShortcutPrompt()
+        {
+            try
+            {
+                string desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+                string shortcutPath = Path.Combine(desktopPath, "SushidaAutoTyper Pro.lnk");
+
+                if (!File.Exists(shortcutPath))
+                {
+                    ShortcutPromptBanner.Visibility = Visibility.Visible;
+                }
+            }
+            catch { }
+        }
+
+        private void CreateShortcutYes_Click(object sender, RoutedEventArgs e)
+        {
+            bool success = CreateDesktopShortcut();
+            ShortcutPromptBanner.Visibility = Visibility.Collapsed;
+
+            if (success)
+            {
+                Log("✅ ホーム画面（デスクトップ）にショートカットを作成しました！次回からいつでも簡単に起動できます。");
+            }
+            else
+            {
+                Log("⚠️ ショートカット作成に失敗しました。");
+            }
+        }
+
+        private void CreateShortcutNo_Click(object sender, RoutedEventArgs e)
+        {
+            ShortcutPromptBanner.Visibility = Visibility.Collapsed;
+            Log("ホーム画面へのショートカット追加をスキップしました。");
+        }
+
+        private bool CreateDesktopShortcut()
+        {
+            try
+            {
+                string desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+                string shortcutPath = Path.Combine(desktopPath, "SushidaAutoTyper Pro.lnk");
+                string exePath = Process.GetCurrentProcess().MainModule?.FileName ?? "";
+
+                if (string.IsNullOrEmpty(exePath)) return false;
+
+                string workDir = Path.GetDirectoryName(exePath) ?? "";
+
+                string psScript = $"$s=(New-Object -COM WScript.Shell).CreateShortcut('{shortcutPath}');" +
+                                  $"$s.TargetPath='{exePath}';" +
+                                  $"$s.WorkingDirectory='{workDir}';" +
+                                  $"$s.Description='Sushida & Typing Game Auto-Typer Pro';" +
+                                  $"$s.Save()";
+
+                ProcessStartInfo psi = new ProcessStartInfo
+                {
+                    FileName = "powershell",
+                    Arguments = $"-NoProfile -ExecutionPolicy Bypass -Command \"{psScript}\"",
+                    CreateNoWindow = true,
+                    UseShellExecute = false
+                };
+
+                using var proc = Process.Start(psi);
+                proc?.WaitForExit();
+                return File.Exists(shortcutPath);
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private void MainWindow_Unloaded(object sender, RoutedEventArgs e)
@@ -262,7 +338,6 @@ namespace SushidaAutoTyper
                         forceLower = ForceLowercaseCheckBox.IsChecked == true;
                     });
 
-                    // Capture screen
                     using var capturedBmp = _ocrEngineService.CaptureScreenRegion(
                         _selectedRegion.X, _selectedRegion.Y, _selectedRegion.Width, _selectedRegion.Height);
 
