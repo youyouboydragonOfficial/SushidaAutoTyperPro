@@ -56,7 +56,6 @@ namespace SushidaAutoTyper
 
             Log("キーボードフック登録完了: [F8] 開始 | [F9] 一時停止 | [F10] 緊急停止");
 
-            // Check if Desktop shortcut already exists
             CheckDesktopShortcutPrompt();
         }
 
@@ -200,16 +199,20 @@ namespace SushidaAutoTyper
                 using var bmp = _ocrEngineService.CaptureScreenRegion(_selectedRegion.X, _selectedRegion.Y, _selectedRegion.Width, _selectedRegion.Height);
                 if (bmp != null)
                 {
-                    CapturedScreenImage.Source = ConvertBitmapToBitmapImage(bmp);
+                    bool binarize = HighContrastBinarizationCheckBox.IsChecked == true;
+                    using var displayBmp = binarize ? _ocrEngineService.PreprocessBitmapForSushida(bmp) : bmp;
+                    CapturedScreenImage.Source = ConvertBitmapToBitmapImage(displayBmp);
                 }
 
                 bool forceLower = ForceLowercaseCheckBox.IsChecked == true;
+                bool useBinarization = HighContrastBinarizationCheckBox.IsChecked == true;
+
                 var (raw, romaji) = await _ocrEngineService.RecognizeScreenRegionAsync(
-                    _selectedRegion.X, _selectedRegion.Y, _selectedRegion.Width, _selectedRegion.Height, true, forceLower);
+                    _selectedRegion.X, _selectedRegion.Y, _selectedRegion.Width, _selectedRegion.Height, true, forceLower, useBinarization);
 
                 string resultText = string.IsNullOrEmpty(romaji) ? (string.IsNullOrEmpty(raw) ? "(文字が検出されませんでした)" : raw) : romaji;
                 OcrPreviewBox.Text = resultText;
-                Log($"🔍 OCRテスト結果: 原文='{raw}', 抽出Text='{romaji}' ({resultText.Length} 文字)");
+                Log($"🔍 OCRテスト結果: 原文='{raw}', 補正済Text='{romaji}' ({resultText.Length} 文字)");
             }
             catch (Exception ex)
             {
@@ -314,6 +317,7 @@ namespace SushidaAutoTyper
             int scanInterval = 80;
             InputMethodMode inputMode = InputMethodMode.CombinedVkScan;
             bool forceLower = true;
+            bool useBinarization = true;
 
             while (!token.IsCancellationRequested && _isRunning)
             {
@@ -336,6 +340,7 @@ namespace SushidaAutoTyper
                             _ => InputMethodMode.CombinedVkScan
                         };
                         forceLower = ForceLowercaseCheckBox.IsChecked == true;
+                        useBinarization = HighContrastBinarizationCheckBox.IsChecked == true;
                     });
 
                     using var capturedBmp = _ocrEngineService.CaptureScreenRegion(
@@ -345,12 +350,13 @@ namespace SushidaAutoTyper
                     {
                         Dispatcher.Invoke(() =>
                         {
-                            CapturedScreenImage.Source = ConvertBitmapToBitmapImage(capturedBmp);
+                            using var displayBmp = useBinarization ? _ocrEngineService.PreprocessBitmapForSushida(capturedBmp) : capturedBmp;
+                            CapturedScreenImage.Source = ConvertBitmapToBitmapImage(displayBmp);
                         });
                     }
 
                     var (rawText, targetText) = await _ocrEngineService.RecognizeScreenRegionAsync(
-                        _selectedRegion.X, _selectedRegion.Y, _selectedRegion.Width, _selectedRegion.Height, true, forceLower);
+                        _selectedRegion.X, _selectedRegion.Y, _selectedRegion.Width, _selectedRegion.Height, true, forceLower, useBinarization);
 
                     if (!string.IsNullOrWhiteSpace(targetText))
                     {
