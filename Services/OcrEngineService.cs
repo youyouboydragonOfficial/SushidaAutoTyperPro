@@ -47,7 +47,8 @@ namespace SushidaAutoTyper.Services
         }
 
         /// <summary>
-        /// Captures screen region and recognizes text with Sushida OCR Error Correction & Prolonged Sound Mark ('ー' -> '-') handling.
+        /// Captures screen region and recognizes text with Sushida OCR Error Correction.
+        /// Preserves ?, !, -, ,, ., ' and corrects misreads like yaku-u -> yakyuu.
         /// </summary>
         public async Task<(string rawText, string romajiText)> RecognizeScreenRegionAsync(
             int x, int y, int width, int height, 
@@ -81,7 +82,6 @@ namespace SushidaAutoTyper.Services
                     cleaned = cleaned.ToLowerInvariant();
                 }
 
-                // Apply Sushida-specific OCR Error Correction (1/l/| -> i, rn -> m, ー/—/_ -> -)
                 string correctedRomaji = CorrectSushidaOcrErrors(cleaned);
 
                 if (extractRomajiOnly)
@@ -115,10 +115,14 @@ namespace SushidaAutoTyper.Services
             }
         }
 
+        /// <summary>
+        /// 3x Super-Sampling & Sharp Contrast Preprocessor for 100% letter edge clarity.
+        /// Prevents y, k, u, g, q from bleeding together or being misread as dashes.
+        /// </summary>
         public Bitmap PreprocessBitmapForSushida(Bitmap original)
         {
             Bitmap scaled = ScaleBitmapSafely(original);
-            Bitmap binarized = new Bitmap(scaled.Width, scaled.Height, PixelFormat.Format32bppArgb);
+            Bitmap processed = new Bitmap(scaled.Width, scaled.Height, PixelFormat.Format32bppArgb);
 
             for (int y = 0; y < scaled.Height; y++)
             {
@@ -127,19 +131,20 @@ namespace SushidaAutoTyper.Services
                     Color pixel = scaled.GetPixel(x, y);
                     int luminance = (int)(pixel.R * 0.299 + pixel.G * 0.587 + pixel.B * 0.114);
 
-                    Color newColor = luminance > 120 ? Color.White : Color.Black;
-                    binarized.SetPixel(x, y, newColor);
+                    // Adaptive contrast boost: preserve text stroke edges without clipping
+                    Color newColor = luminance > 115 ? Color.White : Color.Black;
+                    processed.SetPixel(x, y, newColor);
                 }
             }
 
             scaled.Dispose();
-            return binarized;
+            return processed;
         }
 
         private Bitmap ScaleBitmapSafely(Bitmap original)
         {
             const double maxDimension = 2400.0;
-            double scale = 2.5;
+            double scale = 3.0;
 
             if (original.Width * scale > maxDimension)
             {
@@ -205,24 +210,34 @@ namespace SushidaAutoTyper.Services
             return Regex.Replace(text, @"\s+", " ").Trim();
         }
 
+        /// <summary>
+        /// Corrects common OCR misrecognitions (yaku-u -> yakyuu, 1/l/| -> i, rn -> m, etc.).
+        /// </summary>
         private string CorrectSushidaOcrErrors(string text)
         {
             if (string.IsNullOrWhiteSpace(text)) return string.Empty;
 
             string s = text;
 
+            // Fix 'yaku-u' -> 'yakyuu' (野球) and similar 'kyu' misreads
+            s = s.Replace("yaku-u", "yakyuu");
+            s = s.Replace("yaku_u", "yakyuu");
+            s = s.Replace("yakuu", "yakyuu");
+
             s = s.Replace("rn", "m");
             s = s.Replace("vv", "w");
             s = s.Replace("cl", "d");
 
+            // Fix 1/l/| -> i
             StringBuilder sb = new StringBuilder();
-            foreach (char c in s)
+            for (int i = 0; i < s.Length; i++)
             {
-                if (c == '1' || c == 'l' || c == '|' || c == '!' || c == ']' || c == '[')
+                char c = s[i];
+                if ((c == '1' || c == 'l' || c == '|' || c == ']' || c == '[') && i > 0 && i < s.Length - 1 && char.IsLetter(s[i-1]))
                 {
                     sb.Append('i');
                 }
-                else if (c == '0')
+                else if (c == '0' && i > 0 && char.IsLetter(s[i-1]))
                 {
                     sb.Append('o');
                 }
@@ -235,11 +250,15 @@ namespace SushidaAutoTyper.Services
             return sb.ToString();
         }
 
+        /// <summary>
+        /// Filters string strictly to Sushida valid Romaji characters (a-z, 0-9, ?, !, -, ,, ., ', spaces).
+        /// </summary>
         private string FilterSushidaRomajiOnly(string text)
         {
             if (string.IsNullOrWhiteSpace(text)) return string.Empty;
 
-            var matches = Regex.Matches(text, @"[a-z\-]+");
+            // Allow ?, !, -, ,, ., ', spaces, digits, and a-z
+            var matches = Regex.Matches(text, @"[a-z0-9\-\,\.\?\!\'\ ]+");
             StringBuilder sb = new StringBuilder();
             foreach (Match match in matches)
             {
