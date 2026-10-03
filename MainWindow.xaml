@@ -2,14 +2,13 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Sushida &amp; Typing Game Auto-Typer Pro"
-        Height="680" Width="820"
+        Height="720" Width="860"
         WindowStartupLocation="CenterScreen"
         Background="#11111B"
         Foreground="#CDD6F4"
         FontFamily="Segoe UI, Segoe UI Variable">
 
     <Window.Resources>
-        <!-- Custom Styles -->
         <Style TargetType="Button">
             <Setter Property="Background" Value="#313244"/>
             <Setter Property="Foreground" Value="#FFFFFF"/>
@@ -70,7 +69,7 @@
                     <TextBlock Text="🍣" FontSize="26" VerticalAlignment="Center" Margin="0,0,10,0"/>
                     <StackPanel VerticalAlignment="Center">
                         <TextBlock Text="Sushida &amp; Typing Game Auto-Typer Pro" FontSize="18" FontWeight="Bold" Foreground="#00E5FF"/>
-                        <TextBlock Text="寿司打・Unityゲーム・Webタイピング対応 自動高速タイピングツール v1.0.0" FontSize="11" Foreground="#A6ADC8"/>
+                        <TextBlock Text="寿司打・Unityゲーム・Webタイピング対応 自動高速タイピング v1.0.0" FontSize="11" Foreground="#A6ADC8"/>
                     </StackPanel>
                 </StackPanel>
 
@@ -90,55 +89,80 @@
                 <Grid Background="#1E1E2E" Margin="0,4,0,0">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
 
-                    <!-- Region Controls -->
-                    <Border Grid.Row="0" Background="#252538" CornerRadius="8" Padding="16" Margin="12">
-                        <Grid>
+                    <!-- Left Panel: Controls & Preview -->
+                    <StackPanel Grid.Row="0" Margin="12">
+                        <!-- Region Selector Box -->
+                        <Border Background="#252538" CornerRadius="8" Padding="14" Margin="0,0,0,10">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="1. 画面タイピングエリアの範囲指定" FontSize="14" FontWeight="Bold" Foreground="#FFFFFF"/>
+                                    <TextBlock x:Name="RegionStatusText" Text="未選択 (「🎯 領域を選択」を押して寿司打のローマ字表示枠をドラッグ選択してください)" FontSize="12" Foreground="#BAC2DE" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                    <Button x:Name="SelectRegionBtn" Content="🎯 領域を選択" Click="SelectRegionBtn_Click" Background="#89B4FA" Foreground="#11111B" Margin="0,0,6,0"/>
+                                    <Button x:Name="TestOcrBtn" Content="🔍 テスト認識" Click="TestOcrBtn_Click" Background="#CBA6F7" Foreground="#11111B"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <!-- Scan Options -->
+                        <Grid Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            <StackPanel Grid.Column="0">
-                                <TextBlock Text="タイピング表示エリアの範囲指定" FontSize="14" FontWeight="Bold" Foreground="#FFFFFF"/>
-                                <TextBlock x:Name="RegionStatusText" Text="未選択 (「領域を選択」を押して寿司打の文字部分をドラッグしてください)" FontSize="12" Foreground="#BAC2DE" Margin="0,4,0,0"/>
-                            </StackPanel>
-                            <Button x:Name="SelectRegionBtn" Grid.Column="1" Content="🎯 領域を選択 (Select Area)" Click="SelectRegionBtn_Click" Background="#89B4FA" Foreground="#11111B"/>
-                        </Grid>
-                    </Border>
+                            
+                            <Border Grid.Column="0" Background="#252538" CornerRadius="8" Padding="12" Margin="0,0,6,0">
+                                <StackPanel>
+                                    <TextBlock Text="スキャン速度 (Interval)" FontSize="12" Foreground="#A6ADC8"/>
+                                    <DockPanel Margin="0,4,0,0">
+                                        <TextBlock x:Name="ScanIntervalValText" Text="100 ms" DockPanel.Dock="Right" Foreground="#00E5FF" FontWeight="Bold"/>
+                                        <Slider x:Name="ScanIntervalSlider" Minimum="20" Maximum="500" Value="100" SmallChange="10" ValueChanged="ScanIntervalSlider_ValueChanged"/>
+                                    </DockPanel>
+                                </StackPanel>
+                            </Border>
 
-                    <!-- OCR Settings -->
+                            <Border Grid.Column="1" Background="#252538" CornerRadius="8" Padding="12" Margin="6,0,0,0">
+                                <StackPanel>
+                                    <TextBlock Text="文字認識フィルタ設定" FontSize="12" Foreground="#A6ADC8"/>
+                                    <CheckBox x:Name="ExtractRomajiOnlyCheckBox" Content="ローマ字・ASCII文字のみ抽出 (推奨)" IsChecked="True" Foreground="#CDD6F4" Margin="0,6,0,0"/>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                    </StackPanel>
+
+                    <!-- Live Image & Text Preview Box -->
                     <Grid Grid.Row="1" Margin="12,0,12,12">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="2*"/>
+                            <ColumnDefinition Width="3*"/>
                         </Grid.ColumnDefinitions>
-                        <Border Grid.Column="0" Background="#252538" CornerRadius="8" Padding="14" Margin="0,0,6,0">
-                            <StackPanel>
-                                <TextBlock Text="Scan Interval (スキャン周期)" FontSize="12" Foreground="#A6ADC8"/>
-                                <DockPanel Margin="0,6,0,0">
-                                    <TextBlock x:Name="ScanIntervalValText" Text="150 ms" DockPanel.Dock="Right" Foreground="#00E5FF" FontWeight="Bold"/>
-                                    <Slider x:Name="ScanIntervalSlider" Minimum="50" Maximum="1000" Value="150" SmallChange="10" ValueChanged="ScanIntervalSlider_ValueChanged"/>
-                                </DockPanel>
-                            </StackPanel>
+
+                        <!-- Live Captured Image Box -->
+                        <Border Grid.Column="0" Background="#252538" CornerRadius="8" Padding="10" Margin="0,0,6,0">
+                            <DockPanel>
+                                <TextBlock Text="📸 リアルタイムキャプチャ画像:" DockPanel.Dock="Top" FontSize="12" Foreground="#A6ADC8" Margin="0,0,0,6"/>
+                                <Border Background="#181825" CornerRadius="4" Padding="4">
+                                    <Image x:Name="CapturedScreenImage" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                            </DockPanel>
                         </Border>
-                        <Border Grid.Column="1" Background="#252538" CornerRadius="8" Padding="14" Margin="6,0,0,0">
-                            <StackPanel>
-                                <TextBlock Text="文字化け防止・画像二値化フィルタ" FontSize="12" Foreground="#A6ADC8"/>
-                                <CheckBox x:Name="BinarizationCheckBox" Content="自動コントラスト最適化＆Unicode正規化" IsChecked="True" Foreground="#CDD6F4" Margin="0,6,0,0"/>
-                            </StackPanel>
+
+                        <!-- Live OCR Text Box -->
+                        <Border Grid.Column="1" Background="#252538" CornerRadius="8" Padding="10" Margin="6,0,0,0">
+                            <DockPanel>
+                                <TextBlock Text="🔤 認識された文字 (OCR Result):" DockPanel.Dock="Top" FontSize="12" Foreground="#A6ADC8" Margin="0,0,0,6"/>
+                                <TextBox x:Name="OcrPreviewBox" IsReadOnly="True" Background="#181825" Foreground="#A6E3A1" FontFamily="Consolas" FontSize="16" FontWeight="Bold" Padding="10" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"/>
+                            </DockPanel>
                         </Border>
                     </Grid>
-
-                    <!-- Live OCR Preview -->
-                    <Border Grid.Row="2" Background="#252538" CornerRadius="8" Padding="14" Margin="12,0,12,12">
-                        <DockPanel>
-                            <TextBlock Text="OCR Live Recognition Preview:" DockPanel.Dock="Top" FontSize="12" Foreground="#A6ADC8" Margin="0,0,0,6"/>
-                            <TextBox x:Name="OcrPreviewBox" IsReadOnly="True" Background="#181825" Foreground="#A6E3A1" FontFamily="Consolas" FontSize="15" Padding="10" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"/>
-                        </DockPanel>
-                    </Border>
                 </Grid>
             </TabItem>
 
@@ -151,7 +175,6 @@
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
-                    <!-- Speed & Hardware Options -->
                     <Border Grid.Row="0" Background="#252538" CornerRadius="8" Padding="14" Margin="12">
                         <Grid>
                             <Grid.ColumnDefinitions>
@@ -160,7 +183,7 @@
                             </Grid.ColumnDefinitions>
                             
                             <StackPanel Grid.Column="0" Margin="0,0,10,0">
-                                <TextBlock Text="タイピング速度 (打鍵間隔)" FontSize="12" Foreground="#A6ADC8"/>
+                                <TextBlock Text="タイピング速度 (打鍵間隔ミリ秒)" FontSize="12" Foreground="#A6ADC8"/>
                                 <DockPanel Margin="0,6,0,0">
                                     <TextBlock x:Name="DelayValText" Text="20 ms (3,000 CPM)" DockPanel.Dock="Right" Foreground="#00E5FF" FontWeight="Bold"/>
                                     <Slider x:Name="DelaySlider" Minimum="0" Maximum="300" Value="20" SmallChange="5" ValueChanged="DelaySlider_ValueChanged"/>
@@ -170,14 +193,13 @@
                             <StackPanel Grid.Column="1" Margin="10,0,0,0">
                                 <TextBlock Text="入力互換性＆動作オプション" FontSize="12" Foreground="#A6ADC8"/>
                                 <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
-                                    <CheckBox x:Name="UnityHardwareModeCheckBox" Content="🎮 Unity / DirectInput (ScanCode)" IsChecked="True" Foreground="#A6E3A1" Margin="0,0,15,0" ToolTip="Unityゲーム・Canvas等でハードウェアキー入力をシミュレート"/>
-                                    <CheckBox x:Name="HumanizerCheckBox" Content="👤 人間らしい揺らぎ" IsChecked="False" Foreground="#CDD6F4" ToolTip="キー入力間隔に微小なランダム性を付与"/>
+                                    <CheckBox x:Name="UnityHardwareModeCheckBox" Content="🎮 Unity / DirectInput (ScanCode)" IsChecked="True" Foreground="#A6E3A1" Margin="0,0,15,0"/>
+                                    <CheckBox x:Name="HumanizerCheckBox" Content="👤 人間らしい揺らぎ" IsChecked="False" Foreground="#CDD6F4"/>
                                 </StackPanel>
                             </StackPanel>
                         </Grid>
                     </Border>
 
-                    <!-- Text Box -->
                     <Border Grid.Row="1" Background="#252538" CornerRadius="8" Padding="14" Margin="12,0,12,12">
                         <DockPanel>
                             <TextBlock Text="自動送信するテキストを入力または貼り付けしてください:" DockPanel.Dock="Top" FontSize="12" Foreground="#A6ADC8" Margin="0,0,0,6"/>
@@ -185,7 +207,6 @@
                         </DockPanel>
                     </Border>
 
-                    <!-- Helper Tools -->
                     <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="12,0,12,12" HorizontalAlignment="Right">
                         <Button Content="ひらがな→ローマ字変換" Click="ConvertKanaBtn_Click" Background="#CBA6F7" Foreground="#11111B" Margin="0,0,8,0"/>
                         <Button Content="テキストクリア" Click="ClearTextBtn_Click" Background="#45475A"/>
@@ -202,19 +223,18 @@
                             
                             <Border Background="#252538" CornerRadius="8" Padding="14" Margin="0,0,0,12">
                                 <StackPanel>
-                                    <TextBlock Text="💡 基本的な使い方手順" FontSize="14" FontWeight="Bold" Foreground="#A6E3A1" Margin="0,0,0,6"/>
-                                    <TextBlock Text="1. ブラウザで寿司打（またはお好みのタイピングゲーム）を開きます。" FontSize="12" Margin="0,2"/>
-                                    <TextBlock Text="2. 「画面OCR自動連打モード」の「🎯 領域を選択」ボタンを押します。" FontSize="12" Margin="0,2"/>
-                                    <TextBlock Text="3. 寿司打の画面上で、ローマ字が表示される枠部分をドラッグして囲みます。" FontSize="12" Margin="0,2"/>
-                                    <TextBlock Text="4. [F8] キーを押すと自動タイピングが開始されます！" FontSize="12" Margin="0,2"/>
-                                    <TextBlock Text="5. [F9] で一時停止、[F10] で緊急停止できます。" FontSize="12" Margin="0,2"/>
+                                    <TextBlock Text="💡 画面認識がうまくいかない場合の解決手順" FontSize="14" FontWeight="Bold" Foreground="#A6E3A1" Margin="0,0,0,6"/>
+                                    <TextBlock Text="1. アプリの「🎯 領域を選択」ボタンを押します。" FontSize="12" Margin="0,2"/>
+                                    <TextBlock Text="2. 寿司打画面の『ローマ字が表示される枠（例: sushida）』の部分だけをドラッグ指定します。" FontSize="12" Margin="0,2"/>
+                                    <TextBlock Text="3. 「🔍 テスト認識」ボタンを押して、リアルタイムキャプチャ画像と認識テキストが正しく表示されるか確認します。" FontSize="12" Margin="0,2"/>
+                                    <TextBlock Text="4. キーボードの [F8] キーを押すと自動タイピングが開始されます。" FontSize="12" Margin="0,2"/>
                                 </StackPanel>
                             </Border>
 
                             <Border Background="#252538" CornerRadius="8" Padding="14" Margin="0,0,0,12">
                                 <StackPanel>
                                     <TextBlock Text="🎮 Unity / WebGL / Canvasタイピングゲーム対応について" FontSize="14" FontWeight="Bold" Foreground="#FAB387" Margin="0,0,0,6"/>
-                                    <TextBlock Text="Unityで作成されたタイピングゲームやWebGL Canvasアプリは、一般的なキーボード入力イベントを無視する場合があります。" TextWrapping="Wrap" FontSize="12" Margin="0,2"/>
+                                    <TextBlock Text="Unityで作成されたタイピングゲームやWebGL Canvasアプリは、一般のキーボード入力イベントを無視する場合があります。" TextWrapping="Wrap" FontSize="12" Margin="0,2"/>
                                     <TextBlock Text="本アプリは DirectInput 対応のハードウェアスキャンコード (ScanCode Mode) を自動送信するため、Unity製タイピングゲームでも確実にキー入力を認識します。" TextWrapping="Wrap" FontSize="12" Margin="0,2"/>
                                 </StackPanel>
                             </Border>
@@ -228,7 +248,7 @@
         <Border Grid.Row="2" Background="#181825" CornerRadius="8" Padding="10" Margin="0,8,0,10">
             <DockPanel>
                 <TextBlock Text="STATUS LOG" DockPanel.Dock="Top" FontSize="10" FontWeight="Bold" Foreground="#A6ADC8" Margin="0,0,0,4"/>
-                <TextBox x:Name="LogConsole" Height="70" IsReadOnly="True" Background="Transparent" Foreground="#F5E0DC" BorderThickness="0" FontFamily="Consolas" FontSize="11" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"/>
+                <TextBox x:Name="LogConsole" Height="65" IsReadOnly="True" Background="Transparent" Foreground="#F5E0DC" BorderThickness="0" FontFamily="Consolas" FontSize="11" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"/>
             </DockPanel>
         </Border>
 
