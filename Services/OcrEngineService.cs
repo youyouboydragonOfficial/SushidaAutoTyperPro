@@ -47,7 +47,7 @@ namespace SushidaAutoTyper.Services
         }
 
         /// <summary>
-        /// Captures screen region and recognizes text with Sushida OCR Error Correction.
+        /// Captures screen region and recognizes text with Sushida OCR Error Correction & Prolonged Sound Mark ('ー' -> '-') handling.
         /// </summary>
         public async Task<(string rawText, string romajiText)> RecognizeScreenRegionAsync(
             int x, int y, int width, int height, 
@@ -81,7 +81,7 @@ namespace SushidaAutoTyper.Services
                     cleaned = cleaned.ToLowerInvariant();
                 }
 
-                // Apply Sushida-specific OCR Error Correction (1/l/| -> i, rn -> m, etc.)
+                // Apply Sushida-specific OCR Error Correction (1/l/| -> i, rn -> m, ー/—/_ -> -)
                 string correctedRomaji = CorrectSushidaOcrErrors(cleaned);
 
                 if (extractRomajiOnly)
@@ -115,13 +115,8 @@ namespace SushidaAutoTyper.Services
             }
         }
 
-        /// <summary>
-        /// High contrast binarization preprocessor specifically tuned for Sushida font rendering.
-        /// Makes thin 'i' dots and 'm' arches razor sharp for 100% OCR accuracy.
-        /// </summary>
         public Bitmap PreprocessBitmapForSushida(Bitmap original)
         {
-            // Scale up image
             Bitmap scaled = ScaleBitmapSafely(original);
             Bitmap binarized = new Bitmap(scaled.Width, scaled.Height, PixelFormat.Format32bppArgb);
 
@@ -130,10 +125,8 @@ namespace SushidaAutoTyper.Services
                 for (int x = 0; x < scaled.Width; x++)
                 {
                     Color pixel = scaled.GetPixel(x, y);
-                    // Calculate luminance
                     int luminance = (int)(pixel.R * 0.299 + pixel.G * 0.587 + pixel.B * 0.114);
 
-                    // Threshold: If bright (text), make pure white; if dark (background), make pure black
                     Color newColor = luminance > 120 ? Color.White : Color.Black;
                     binarized.SetPixel(x, y, newColor);
                 }
@@ -204,24 +197,24 @@ namespace SushidaAutoTyper.Services
                 }
             }
 
-            return Regex.Replace(sb.ToString(), @"\s+", " ").Trim();
+            string text = sb.ToString();
+
+            // Convert Katakana prolonged sound mark 'ー', Em Dash '—', En Dash '–', Fullwidth '-' '－', Minus '−', Underscore '_' to ASCII '-'
+            text = Regex.Replace(text, @"[\u30FC\u2015\u2013\u2014\u2212\uFF0D_]+", "-");
+
+            return Regex.Replace(text, @"\s+", " ").Trim();
         }
 
-        /// <summary>
-        /// Corrects common OCR misrecognitions for Sushida Romaji font (e.g. '1'/'l'/'|' -> 'i', 'rn' -> 'm').
-        /// </summary>
         private string CorrectSushidaOcrErrors(string text)
         {
             if (string.IsNullOrWhiteSpace(text)) return string.Empty;
 
             string s = text;
 
-            // Common OCR misrecognitions
             s = s.Replace("rn", "m");
             s = s.Replace("vv", "w");
             s = s.Replace("cl", "d");
 
-            // Replace digits & misread pipes/slashes that are OCR misreads for 'i' or 'o'
             StringBuilder sb = new StringBuilder();
             foreach (char c in s)
             {
@@ -242,9 +235,6 @@ namespace SushidaAutoTyper.Services
             return sb.ToString();
         }
 
-        /// <summary>
-        /// Filters string strictly to Sushida valid Romaji characters (lowercase a-z and hyphen).
-        /// </summary>
         private string FilterSushidaRomajiOnly(string text)
         {
             if (string.IsNullOrWhiteSpace(text)) return string.Empty;
