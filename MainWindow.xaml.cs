@@ -40,7 +40,7 @@ namespace SushidaAutoTyper
             Loaded += MainWindow_Loaded;
             Unloaded += MainWindow_Unloaded;
 
-            Log("🚀 SushidaAutoTyper Pro が起動しました。[F8] キーでいつでもタイピングを開始できます。");
+            Log("🚀 SushidaAutoTyper Pro が起動しました。[F8] キーでタイピング連続自動実行を開始できます。");
         }
 
         private void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -132,7 +132,7 @@ namespace SushidaAutoTyper
 
                 string resultText = string.IsNullOrEmpty(romaji) ? (string.IsNullOrEmpty(raw) ? "(文字が検出されませんでした)" : raw) : romaji;
                 OcrPreviewBox.Text = resultText;
-                Log($"🔍 OCRテスト結果: 原文='{raw}', 抽出Text='{romaji}'");
+                Log($"🔍 OCRテスト結果: 原文='{raw}', 抽出Text='{romaji}' ({resultText.Length} 文字)");
             }
             catch (Exception ex)
             {
@@ -165,13 +165,12 @@ namespace SushidaAutoTyper
             _typingCancellationTokenSource = new CancellationTokenSource();
             var token = _typingCancellationTokenSource.Token;
 
-            // Auto-focus target game window if enabled
             if (_isRegionSelected && AutoFocusCheckBox.IsChecked == true)
             {
                 bool focused = NativeKeyboard.FocusTargetWindow(_selectedRegion.X + 10, _selectedRegion.Y + 10);
                 if (focused)
                 {
-                    Log("🎯 ゲーム画面にウィンドウフォーカスを移動しました。");
+                    Log("🎯 ゲーム画面にフォーカスを自動移動しました。");
                 }
             }
 
@@ -190,7 +189,7 @@ namespace SushidaAutoTyper
                     StopAutoTyping();
                     return;
                 }
-                Log("▶ [OCRモード] 自動タイピングを開始しました (F8)");
+                Log("▶ [OCR連続自動連打モード] 無制限連続タイピングを開始しました (停止はF10)");
                 Task.Run(() => RunOcrAutoTypingLoop(token), token);
             }
             else
@@ -233,9 +232,12 @@ namespace SushidaAutoTyper
             Log("⏹ 自動タイピングを停止しました (F10)");
         }
 
+        /// <summary>
+        /// Continuous Auto-Typing Loop: Never stops after 1 sentence, keeps scanning and typing indefinitely!
+        /// </summary>
         private async Task RunOcrAutoTypingLoop(CancellationToken token)
         {
-            int scanInterval = 100;
+            int scanInterval = 80;
             InputMethodMode inputMode = InputMethodMode.CombinedVkScan;
 
             while (!token.IsCancellationRequested && _isRunning)
@@ -279,10 +281,11 @@ namespace SushidaAutoTyper
                     {
                         Dispatcher.Invoke(() => OcrPreviewBox.Text = targetText);
 
+                        // If text is different from last typed or newly appeared
                         if (targetText != _lastTypedText)
                         {
                             _lastTypedText = targetText;
-                            Log($"⚡ 検出・キー打鍵開始: '{targetText}' (Mode: {inputMode})");
+                            Log($"⚡ 検出・打鍵中 ({targetText.Length}文字): '{targetText}'");
 
                             int delay = 20;
                             Dispatcher.Invoke(() => delay = (int)DelaySlider.Value);
@@ -300,7 +303,15 @@ namespace SushidaAutoTyper
                                     await Task.Delay(delay, token);
                                 }
                             }
+
+                            // Wait a short time for Sushida to load next sushi plate / sentence
+                            await Task.Delay(80, token);
+                            _lastTypedText = string.Empty; // Reset so next word is immediately typed!
                         }
+                    }
+                    else
+                    {
+                        _lastTypedText = string.Empty;
                     }
                 }
                 catch (TaskCanceledException) { break; }
