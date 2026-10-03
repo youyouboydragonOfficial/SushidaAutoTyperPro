@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Text;
@@ -13,7 +14,8 @@ namespace SushidaAutoTyper.Services
 {
     public class OcrEngineService
     {
-        private OcrEngine? _ocrEngine;
+        private OcrEngine? _ocrEngineEn;
+        private OcrEngine? _ocrEngineJa;
 
         public OcrEngineService()
         {
@@ -24,92 +26,89 @@ namespace SushidaAutoTyper.Services
         {
             try
             {
-                // Try English first for Romaji / typing prompts
-                var lang = new Windows.Globalization.Language("en-US");
-                if (OcrEngine.IsLanguageSupported(lang))
+                var langEn = new Windows.Globalization.Language("en-US");
+                if (OcrEngine.IsLanguageSupported(langEn))
                 {
-                    _ocrEngine = OcrEngine.TryCreateFromLanguage(lang);
+                    _ocrEngineEn = OcrEngine.TryCreateFromLanguage(langEn);
                 }
 
-                if (_ocrEngine == null)
+                var langJa = new Windows.Globalization.Language("ja-JP");
+                if (OcrEngine.IsLanguageSupported(langJa))
                 {
-                    _ocrEngine = OcrEngine.TryCreateFromUserProfileLanguages();
+                    _ocrEngineJa = OcrEngine.TryCreateFromLanguage(langJa);
+                }
+
+                if (_ocrEngineEn == null && _ocrEngineJa == null)
+                {
+                    _ocrEngineEn = OcrEngine.TryCreateFromUserProfileLanguages();
                 }
             }
-            catch
-            {
-                _ocrEngine = null;
-            }
+            catch { }
         }
 
         /// <summary>
-        /// Captures a screen region and performs OCR with image preprocessing for maximum accuracy.
+        /// Captures screen region and recognizes text.
         /// </summary>
-        public async Task<string> RecognizeScreenRegionAsync(int x, int y, int width, int height)
+        public async Task<(string rawText, string romajiText)> RecognizeScreenRegionAsync(int x, int y, int width, int height, bool extractRomajiOnly = true)
         {
-            if (_ocrEngine == null || width <= 0 || height <= 0) return string.Empty;
+            OcrEngine? engine = _ocrEngineEn ?? _ocrEngineJa;
+            if (engine == null || width <= 5 || height <= 5) return (string.Empty, string.Empty);
 
             try
             {
                 using var bmp = CaptureScreenRegion(x, y, width, height);
-                if (bmp == null) return string.Empty;
+                if (bmp == null) return (string.Empty, string.Empty);
 
-                using var processedBmp = PreprocessBitmap(bmp);
-                using var softwareBmp = await ConvertBitmapToSoftwareBitmapAsync(processedBmp);
+                using var scaledBmp = ScaleBitmap(bmp, 2);
+                using var softwareBmp = await ConvertBitmapToSoftwareBitmapAsync(scaledBmp);
 
-                if (softwareBmp == null) return string.Empty;
+                if (softwareBmp == null) return (string.Empty, string.Empty);
 
-                var ocrResult = await _ocrEngine.RecognizeAsync(softwareBmp);
-                string text = ocrResult.Text;
+                var ocrResult = await engine.RecognizeAsync(softwareBmp);
+                string rawText = ocrResult.Text ?? string.Empty;
 
-                return CleanAndSanitizeText(text);
+                string cleaned = CleanText(rawText);
+                string romajiOnly = ExtractRomajiPrompt(cleaned);
+
+                return (cleaned, extractRomajiOnly ? romajiOnly : cleaned);
             }
             catch
             {
-                return string.Empty;
+                return (string.Empty, string.Empty);
             }
         }
 
-        private Bitmap CaptureScreenRegion(int x, int y, int width, int height)
+        public Bitmap? CaptureScreenRegion(int x, int y, int width, int height)
         {
-            Bitmap bmp = new Bitmap(width, height, PixelFormat.Format32bppArgb);
-            using (Graphics g = Graphics.FromImage(bmp))
+            if (width <= 0 || height <= 0) return null;
+            try
             {
-                g.CopyFromScreen(x, y, 0, 0, new Size(width, height), CopyPixelOperation.SourceCopy);
+                Bitmap bmp = new Bitmap(width, height, PixelFormat.Format32bppArgb);
+                using (Graphics g = Graphics.FromImage(bmp))
+                {
+                    g.CopyFromScreen(x, y, 0, 0, new Size(width, height), CopyPixelOperation.SourceCopy);
+                }
+                return bmp;
             }
-            return bmp;
+            catch
+            {
+                return null;
+            }
         }
 
-        /// <summary>
-        /// Preprocesses image: 2x Scale, Grayscale, High Contrast to optimize OCR accuracy and prevent character misrecognition.
-        /// </summary>
-        private Bitmap PreprocessBitmap(Bitmap original)
+        private Bitmap ScaleBitmap(Bitmap original, int factor)
         {
-            int newWidth = original.Width * 2;
-            int newHeight = original.Height * 2;
-            Bitmap scaled = new Bitmap(newWidth, newHeight, PixelFormat.Format32bppArgb);
-
+            int newW = original.Width * factor;
+            int newH = original.Height * factor;
+            Bitmap scaled = new Bitmap(newW, newH, PixelFormat.Format32bppArgb);
             using (Graphics g = Graphics.FromImage(scaled))
             {
-                g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
-                g.DrawImage(original, 0, 0, newWidth, newHeight);
+                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                g.SmoothingMode = SmoothingMode.HighQuality;
+                g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                g.DrawImage(original, 0, 0, newW, newH);
             }
-
-            // Grayscale & Thresholding
-            Bitmap processed = new Bitmap(newWidth, newHeight, PixelFormat.Format32bppArgb);
-            for (int py = 0; py < newHeight; py++)
-            {
-                for (int px = 0; px < newWidth; px++)
-                {
-                    Color col = scaled.GetPixel(px, py);
-                    int gray = (int)(col.R * 0.3 + col.G * 0.59 + col.B * 0.11);
-                    // Binarize (High Contrast)
-                    Color newCol = gray > 140 ? Color.White : Color.Black;
-                    processed.SetPixel(px, py, newCol);
-                }
-            }
-            scaled.Dispose();
-            return processed;
+            return scaled;
         }
 
         private async Task<SoftwareBitmap?> ConvertBitmapToSoftwareBitmapAsync(Bitmap bitmap)
@@ -123,10 +122,7 @@ namespace SushidaAutoTyper.Services
             return await decoder.GetSoftwareBitmapAsync();
         }
 
-        /// <summary>
-        /// Cleans OCR text, eliminates Mojibake, normalizes fullwidth characters to standard halfwidth Romaji/ASCII.
-        /// </summary>
-        private string CleanAndSanitizeText(string rawText)
+        private string CleanText(string rawText)
         {
             if (string.IsNullOrWhiteSpace(rawText)) return string.Empty;
 
@@ -138,24 +134,32 @@ namespace SushidaAutoTyper.Services
                 {
                     sb.Append((char)(c - 0xEE00));
                 }
-                else if (c == 0x3000) // Fullwidth space
+                else if (c == 0x3000)
                 {
                     sb.Append(' ');
                 }
-                else if (c >= 32 && c <= 126) // Standard printable ASCII
-                {
-                    sb.Append(c);
-                }
-                else if (c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9')
+                else if (c != '\r' && c != '\n')
                 {
                     sb.Append(c);
                 }
             }
 
-            string result = sb.ToString();
-            // Clean consecutive spaces
-            result = Regex.Replace(result, @"\s+", " ").Trim();
-            return result;
+            return Regex.Replace(sb.ToString(), @"\s+", " ").Trim();
+        }
+
+        private string ExtractRomajiPrompt(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+
+            // Extract lower/upper ASCII characters and common symbols used in Romaji typing
+            var matches = Regex.Matches(text, @"[a-zA-Z0-9\-\,\.\?\!\'\ ]+");
+            StringBuilder sb = new StringBuilder();
+            foreach (Match match in matches)
+            {
+                sb.Append(match.Value);
+            }
+
+            return sb.ToString().Trim();
         }
     }
 }
