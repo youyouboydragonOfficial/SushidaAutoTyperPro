@@ -47,9 +47,9 @@ namespace SushidaAutoTyper.Services
         }
 
         /// <summary>
-        /// Captures screen region and recognizes text safely without exceeding MaxImageDimension (2600px).
+        /// Captures screen region and recognizes text safely.
         /// </summary>
-        public async Task<(string rawText, string romajiText)> RecognizeScreenRegionAsync(int x, int y, int width, int height, bool extractRomajiOnly = true)
+        public async Task<(string rawText, string romajiText)> RecognizeScreenRegionAsync(int x, int y, int width, int height, bool extractRomajiOnly = true, bool forceLowercase = true)
         {
             OcrEngine? engine = _ocrEngineEn ?? _ocrEngineJa;
             if (engine == null || width <= 5 || height <= 5) return (string.Empty, string.Empty);
@@ -69,6 +69,11 @@ namespace SushidaAutoTyper.Services
 
                 string cleaned = CleanText(rawText);
                 string romajiOnly = ExtractRomajiPrompt(cleaned);
+
+                if (forceLowercase)
+                {
+                    romajiOnly = romajiOnly.ToLowerInvariant();
+                }
 
                 return (cleaned, extractRomajiOnly ? romajiOnly : cleaned);
             }
@@ -97,7 +102,7 @@ namespace SushidaAutoTyper.Services
         }
 
         /// <summary>
-        /// Scales bitmap dynamically while strictly respecting Windows Media OCR's MaxImageDimension (2500px safety limit).
+        /// Scales bitmap dynamically while respecting Windows Media OCR MaxImageDimension limit (2400px).
         /// </summary>
         private Bitmap ScaleBitmapSafely(Bitmap original)
         {
