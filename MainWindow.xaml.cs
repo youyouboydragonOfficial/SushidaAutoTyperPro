@@ -1,11 +1,12 @@
 using System;
 using System.Drawing;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
-using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using SushidaAutoTyper.Services;
 
 namespace SushidaAutoTyper
@@ -30,7 +31,7 @@ namespace SushidaAutoTyper
         private bool _isRunning = false;
         private bool _isPaused = false;
         private int _typedCharCount = 0;
-        private string _lastOcrText = string.Empty;
+        private string _lastTypedText = string.Empty;
 
         public MainWindow()
         {
@@ -44,7 +45,6 @@ namespace SushidaAutoTyper
 
         private void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
-            // Register Global Hotkeys
             IntPtr handle = new WindowInteropHelper(this).Handle;
             _hwndSource = HwndSource.FromHwnd(handle);
             _hwndSource?.AddHook(HwndHook);
@@ -90,7 +90,7 @@ namespace SushidaAutoTyper
             return IntPtr.Zero;
         }
 
-        #region Region Selection
+        #region Region Selection & OCR Test
 
         private void SelectRegionBtn_Click(object sender, RoutedEventArgs e)
         {
@@ -101,6 +101,43 @@ namespace SushidaAutoTyper
                 _isRegionSelected = true;
                 RegionStatusText.Text = $"選択範囲: ({_selectedRegion.X}, {_selectedRegion.Y}) | サイズ: {_selectedRegion.Width} x {_selectedRegion.Height}";
                 Log($"画面領域を設定しました: X={_selectedRegion.X}, Y={_selectedRegion.Y}, W={_selectedRegion.Width}, H={_selectedRegion.Height}");
+
+                // Run a test capture immediately
+                TestOcr();
+            }
+        }
+
+        private void TestOcrBtn_Click(object sender, RoutedEventArgs e)
+        {
+            TestOcr();
+        }
+
+        private async void TestOcr()
+        {
+            if (!_isRegionSelected)
+            {
+                Log("⚠️ まず「🎯 領域を選択」ボタンからタイピング枠を選択してください。");
+                return;
+            }
+
+            try
+            {
+                using var bmp = _ocrEngineService.CaptureScreenRegion(_selectedRegion.X, _selectedRegion.Y, _selectedRegion.Width, _selectedRegion.Height);
+                if (bmp != null)
+                {
+                    CapturedScreenImage.Source = ConvertBitmapToBitmapImage(bmp);
+                }
+
+                bool extractRomaji = ExtractRomajiOnlyCheckBox.IsChecked == true;
+                var (raw, romaji) = await _ocrEngineService.RecognizeScreenRegionAsync(
+                    _selectedRegion.X, _selectedRegion.Y, _selectedRegion.Width, _selectedRegion.Height, extractRomaji);
+
+                OcrPreviewBox.Text = string.IsNullOrEmpty(romaji) ? (string.IsNullOrEmpty(raw) ? "(文字が検出されませんでした)" : raw) : romaji;
+                Log($"🔍 OCRテスト結果: 原文='{raw}', 抽出Text='{romaji}'");
+            }
+            catch (Exception ex)
+            {
+                Log($"⚠️ テストエラー: {ex.Message}");
             }
         }
 
@@ -119,6 +156,7 @@ namespace SushidaAutoTyper
             _isRunning = true;
             _isPaused = false;
             _typedCharCount = 0;
+            _lastTypedText = string.Empty;
             UpdateTypedCountDisplay();
 
             StartBtn.IsEnabled = false;
@@ -128,7 +166,6 @@ namespace SushidaAutoTyper
             _typingCancellationTokenSource = new CancellationTokenSource();
             var token = _typingCancellationTokenSource.Token;
 
-            // Determine mode (Tab index: 0 = OCR Mode, 1 = Custom Text Mode)
             int selectedTab = 0;
             Dispatcher.Invoke(() =>
             {
@@ -140,7 +177,7 @@ namespace SushidaAutoTyper
             {
                 if (!_isRegionSelected)
                 {
-                    Log("⚠️ エラー: 画面OCR領域が選択されていません。「🎯 領域を選択」ボタンから対象領域を指定してください。");
+                    Log("⚠️ エラー: 画面OCR領域が選択されていません。「🎯 領域を選択」ボタンを押して枠を指定してください。");
                     StopAutoTyping();
                     return;
                 }
@@ -189,14 +226,9 @@ namespace SushidaAutoTyper
 
         private async Task RunOcrAutoTypingLoop(CancellationToken token)
         {
-            int scanInterval = 150;
+            int scanInterval = 100;
             bool useUnity = true;
-
-            Dispatcher.Invoke(() =>
-            {
-                scanInterval = (int)ScanIntervalSlider.Value;
-                useUnity = UnityHardwareModeCheckBox.IsChecked == true;
-            });
+            bool extractRomaji = true;
 
             while (!token.IsCancellationRequested && _isRunning)
             {
@@ -208,28 +240,53 @@ namespace SushidaAutoTyper
 
                 try
                 {
-                    string recognizedText = await _ocrEngineService.RecognizeScreenRegionAsync(
+                    Dispatcher.Invoke(() =>
+                    {
+                        scanInterval = (int)ScanIntervalSlider.Value;
+                        useUnity = UnityHardwareModeCheckBox.IsChecked == true;
+                        extractRomaji = ExtractRomajiOnlyCheckBox.IsChecked == true;
+                    });
+
+                    // Capture screen
+                    using var capturedBmp = _ocrEngineService.CaptureScreenRegion(
                         _selectedRegion.X, _selectedRegion.Y, _selectedRegion.Width, _selectedRegion.Height);
 
-                    if (!string.IsNullOrWhiteSpace(recognizedText) && recognizedText != _lastOcrText)
+                    if (capturedBmp != null)
                     {
-                        _lastOcrText = recognizedText;
-                        Dispatcher.Invoke(() => OcrPreviewBox.Text = recognizedText);
-
-                        int delay = 20;
-                        Dispatcher.Invoke(() => delay = (int)DelaySlider.Value);
-
-                        foreach (char ch in recognizedText)
+                        Dispatcher.Invoke(() =>
                         {
-                            if (token.IsCancellationRequested || !_isRunning || _isPaused) break;
+                            CapturedScreenImage.Source = ConvertBitmapToBitmapImage(capturedBmp);
+                        });
+                    }
 
-                            NativeKeyboard.SendChar(ch, useUnity);
-                            Interlocked.Increment(ref _typedCharCount);
-                            Dispatcher.Invoke(UpdateTypedCountDisplay);
+                    var (rawText, targetText) = await _ocrEngineService.RecognizeScreenRegionAsync(
+                        _selectedRegion.X, _selectedRegion.Y, _selectedRegion.Width, _selectedRegion.Height, extractRomaji);
 
-                            if (delay > 0)
+                    if (!string.IsNullOrWhiteSpace(targetText))
+                    {
+                        Dispatcher.Invoke(() => OcrPreviewBox.Text = targetText);
+
+                        // If text is new or different from last typed text
+                        if (targetText != _lastTypedText)
+                        {
+                            _lastTypedText = targetText;
+                            Log($"⚡ 検出・入力開始: '{targetText}'");
+
+                            int delay = 20;
+                            Dispatcher.Invoke(() => delay = (int)DelaySlider.Value);
+
+                            foreach (char ch in targetText)
                             {
-                                await Task.Delay(delay, token);
+                                if (token.IsCancellationRequested || !_isRunning || _isPaused) break;
+
+                                NativeKeyboard.SendChar(ch, useUnity);
+                                Interlocked.Increment(ref _typedCharCount);
+                                Dispatcher.Invoke(UpdateTypedCountDisplay);
+
+                                if (delay > 0)
+                                {
+                                    await Task.Delay(delay, token);
+                                }
                             }
                         }
                     }
@@ -237,7 +294,7 @@ namespace SushidaAutoTyper
                 catch (TaskCanceledException) { break; }
                 catch (Exception ex)
                 {
-                    Log($"OCRエラー: {ex.Message}");
+                    Log($"OCRループ例外: {ex.Message}");
                 }
 
                 await Task.Delay(scanInterval, token);
@@ -338,12 +395,26 @@ namespace SushidaAutoTyper
             });
         }
 
+        private BitmapImage ConvertBitmapToBitmapImage(Bitmap src)
+        {
+            using MemoryStream ms = new MemoryStream();
+            src.Save(ms, System.Drawing.Imaging.ImageFormat.Bmp);
+            ms.Position = 0;
+            BitmapImage image = new BitmapImage();
+            image.BeginInit();
+            image.CacheOption = BitmapCacheOption.OnLoad;
+            image.StreamSource = ms;
+            image.EndInit();
+            image.Freeze();
+            return image;
+        }
+
         private static T? FindVisualChild<T>(DependencyObject? obj) where T : DependencyObject
         {
             if (obj == null) return null;
-            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(obj); i++)
+            for (int i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(obj); i++)
             {
-                DependencyObject child = VisualTreeHelper.GetChild(obj, i);
+                DependencyObject child = System.Windows.Media.VisualTreeHelper.GetChild(obj, i);
                 if (child != null && child is T t)
                     return t;
                 else if (child != null)
