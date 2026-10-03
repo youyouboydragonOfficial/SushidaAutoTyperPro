@@ -40,7 +40,7 @@ namespace SushidaAutoTyper
             Loaded += MainWindow_Loaded;
             Unloaded += MainWindow_Unloaded;
 
-            Log("🚀 SushidaAutoTyper Pro が起動しました。F8 キーでいつでもタイピングを開始できます。");
+            Log("🚀 SushidaAutoTyper Pro が起動しました。[F8] キーでいつでもタイピングを開始できます。");
         }
 
         private void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -102,7 +102,6 @@ namespace SushidaAutoTyper
                 RegionStatusText.Text = $"選択範囲: ({_selectedRegion.X}, {_selectedRegion.Y}) | サイズ: {_selectedRegion.Width} x {_selectedRegion.Height}";
                 Log($"画面領域を設定しました: X={_selectedRegion.X}, Y={_selectedRegion.Y}, W={_selectedRegion.Width}, H={_selectedRegion.Height}");
 
-                // Run a test capture immediately
                 TestOcr();
             }
         }
@@ -128,11 +127,11 @@ namespace SushidaAutoTyper
                     CapturedScreenImage.Source = ConvertBitmapToBitmapImage(bmp);
                 }
 
-                bool extractRomaji = ExtractRomajiOnlyCheckBox.IsChecked == true;
                 var (raw, romaji) = await _ocrEngineService.RecognizeScreenRegionAsync(
-                    _selectedRegion.X, _selectedRegion.Y, _selectedRegion.Width, _selectedRegion.Height, extractRomaji);
+                    _selectedRegion.X, _selectedRegion.Y, _selectedRegion.Width, _selectedRegion.Height, true);
 
-                OcrPreviewBox.Text = string.IsNullOrEmpty(romaji) ? (string.IsNullOrEmpty(raw) ? "(文字が検出されませんでした)" : raw) : romaji;
+                string resultText = string.IsNullOrEmpty(romaji) ? (string.IsNullOrEmpty(raw) ? "(文字が検出されませんでした)" : raw) : romaji;
+                OcrPreviewBox.Text = resultText;
                 Log($"🔍 OCRテスト結果: 原文='{raw}', 抽出Text='{romaji}'");
             }
             catch (Exception ex)
@@ -165,6 +164,16 @@ namespace SushidaAutoTyper
 
             _typingCancellationTokenSource = new CancellationTokenSource();
             var token = _typingCancellationTokenSource.Token;
+
+            // Auto-focus target game window if enabled
+            if (_isRegionSelected && AutoFocusCheckBox.IsChecked == true)
+            {
+                bool focused = NativeKeyboard.FocusTargetWindow(_selectedRegion.X + 10, _selectedRegion.Y + 10);
+                if (focused)
+                {
+                    Log("🎯 ゲーム画面にウィンドウフォーカスを移動しました。");
+                }
+            }
 
             int selectedTab = 0;
             Dispatcher.Invoke(() =>
@@ -227,8 +236,7 @@ namespace SushidaAutoTyper
         private async Task RunOcrAutoTypingLoop(CancellationToken token)
         {
             int scanInterval = 100;
-            bool useUnity = true;
-            bool extractRomaji = true;
+            InputMethodMode inputMode = InputMethodMode.CombinedVkScan;
 
             while (!token.IsCancellationRequested && _isRunning)
             {
@@ -243,8 +251,13 @@ namespace SushidaAutoTyper
                     Dispatcher.Invoke(() =>
                     {
                         scanInterval = (int)ScanIntervalSlider.Value;
-                        useUnity = UnityHardwareModeCheckBox.IsChecked == true;
-                        extractRomaji = ExtractRomajiOnlyCheckBox.IsChecked == true;
+                        int selectedModeIndex = InputModeComboBox.SelectedIndex;
+                        inputMode = selectedModeIndex switch
+                        {
+                            1 => InputMethodMode.HardwareScanCode,
+                            2 => InputMethodMode.LegacyKeybdEvent,
+                            _ => InputMethodMode.CombinedVkScan
+                        };
                     });
 
                     // Capture screen
@@ -260,17 +273,16 @@ namespace SushidaAutoTyper
                     }
 
                     var (rawText, targetText) = await _ocrEngineService.RecognizeScreenRegionAsync(
-                        _selectedRegion.X, _selectedRegion.Y, _selectedRegion.Width, _selectedRegion.Height, extractRomaji);
+                        _selectedRegion.X, _selectedRegion.Y, _selectedRegion.Width, _selectedRegion.Height, true);
 
                     if (!string.IsNullOrWhiteSpace(targetText))
                     {
                         Dispatcher.Invoke(() => OcrPreviewBox.Text = targetText);
 
-                        // If text is new or different from last typed text
                         if (targetText != _lastTypedText)
                         {
                             _lastTypedText = targetText;
-                            Log($"⚡ 検出・入力開始: '{targetText}'");
+                            Log($"⚡ 検出・キー打鍵開始: '{targetText}' (Mode: {inputMode})");
 
                             int delay = 20;
                             Dispatcher.Invoke(() => delay = (int)DelaySlider.Value);
@@ -279,7 +291,7 @@ namespace SushidaAutoTyper
                             {
                                 if (token.IsCancellationRequested || !_isRunning || _isPaused) break;
 
-                                NativeKeyboard.SendChar(ch, useUnity);
+                                NativeKeyboard.SendChar(ch, inputMode);
                                 Interlocked.Increment(ref _typedCharCount);
                                 Dispatcher.Invoke(UpdateTypedCountDisplay);
 
@@ -304,13 +316,19 @@ namespace SushidaAutoTyper
         private async Task RunCustomTextTypingLoop(string text, CancellationToken token)
         {
             int delay = 20;
-            bool useUnity = true;
+            InputMethodMode inputMode = InputMethodMode.CombinedVkScan;
             bool humanize = false;
 
             Dispatcher.Invoke(() =>
             {
                 delay = (int)DelaySlider.Value;
-                useUnity = UnityHardwareModeCheckBox.IsChecked == true;
+                int selectedModeIndex = InputModeComboBox.SelectedIndex;
+                inputMode = selectedModeIndex switch
+                {
+                    1 => InputMethodMode.HardwareScanCode,
+                    2 => InputMethodMode.LegacyKeybdEvent,
+                    _ => InputMethodMode.CombinedVkScan
+                };
                 humanize = HumanizerCheckBox.IsChecked == true;
             });
 
@@ -325,7 +343,7 @@ namespace SushidaAutoTyper
                     await Task.Delay(100, token);
                 }
 
-                NativeKeyboard.SendChar(ch, useUnity);
+                NativeKeyboard.SendChar(ch, inputMode);
                 Interlocked.Increment(ref _typedCharCount);
                 Dispatcher.Invoke(UpdateTypedCountDisplay);
 
