@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <AssemblyTitle>SushidaAutoTyper Pro</AssemblyTitle>
+    <Product>Sushida &amp; Typing Game Auto-Typer Pro</Product>
+    <Description>High Speed Auto-Typing Application for Sushida, Unity Games, and Web Typing Games</Description>
+  </PropertyGroup>
+
+</Project>
