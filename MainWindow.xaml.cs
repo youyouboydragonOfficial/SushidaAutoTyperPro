@@ -127,8 +127,9 @@ namespace SushidaAutoTyper
                     CapturedScreenImage.Source = ConvertBitmapToBitmapImage(bmp);
                 }
 
+                bool forceLower = ForceLowercaseCheckBox.IsChecked == true;
                 var (raw, romaji) = await _ocrEngineService.RecognizeScreenRegionAsync(
-                    _selectedRegion.X, _selectedRegion.Y, _selectedRegion.Width, _selectedRegion.Height, true);
+                    _selectedRegion.X, _selectedRegion.Y, _selectedRegion.Width, _selectedRegion.Height, true, forceLower);
 
                 string resultText = string.IsNullOrEmpty(romaji) ? (string.IsNullOrEmpty(raw) ? "(文字が検出されませんでした)" : raw) : romaji;
                 OcrPreviewBox.Text = resultText;
@@ -232,13 +233,11 @@ namespace SushidaAutoTyper
             Log("⏹ 自動タイピングを停止しました (F10)");
         }
 
-        /// <summary>
-        /// Continuous Auto-Typing Loop: Never stops after 1 sentence, keeps scanning and typing indefinitely!
-        /// </summary>
         private async Task RunOcrAutoTypingLoop(CancellationToken token)
         {
             int scanInterval = 80;
             InputMethodMode inputMode = InputMethodMode.CombinedVkScan;
+            bool forceLower = true;
 
             while (!token.IsCancellationRequested && _isRunning)
             {
@@ -260,6 +259,7 @@ namespace SushidaAutoTyper
                             2 => InputMethodMode.LegacyKeybdEvent,
                             _ => InputMethodMode.CombinedVkScan
                         };
+                        forceLower = ForceLowercaseCheckBox.IsChecked == true;
                     });
 
                     // Capture screen
@@ -275,13 +275,12 @@ namespace SushidaAutoTyper
                     }
 
                     var (rawText, targetText) = await _ocrEngineService.RecognizeScreenRegionAsync(
-                        _selectedRegion.X, _selectedRegion.Y, _selectedRegion.Width, _selectedRegion.Height, true);
+                        _selectedRegion.X, _selectedRegion.Y, _selectedRegion.Width, _selectedRegion.Height, true, forceLower);
 
                     if (!string.IsNullOrWhiteSpace(targetText))
                     {
                         Dispatcher.Invoke(() => OcrPreviewBox.Text = targetText);
 
-                        // If text is different from last typed or newly appeared
                         if (targetText != _lastTypedText)
                         {
                             _lastTypedText = targetText;
@@ -304,9 +303,8 @@ namespace SushidaAutoTyper
                                 }
                             }
 
-                            // Wait a short time for Sushida to load next sushi plate / sentence
                             await Task.Delay(80, token);
-                            _lastTypedText = string.Empty; // Reset so next word is immediately typed!
+                            _lastTypedText = string.Empty;
                         }
                     }
                     else
