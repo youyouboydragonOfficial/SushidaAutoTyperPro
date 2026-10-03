@@ -59,6 +59,11 @@ namespace SushidaAutoTyper
             CheckDesktopShortcutPrompt();
         }
 
+        private void AlwaysOnTopCheckBox_CheckedChanged(object sender, RoutedEventArgs e)
+        {
+            Topmost = AlwaysOnTopCheckBox.IsChecked == true;
+        }
+
         private void CheckDesktopShortcutPrompt()
         {
             try
@@ -81,7 +86,7 @@ namespace SushidaAutoTyper
 
             if (success)
             {
-                Log("✅ ホーム画面（デスクトップ）にショートカットを作成しました！次回からいつでも簡単に起動できます。");
+                Log("✅ デスクトップにショートカットを作成しました！次回からいつでも簡単に起動できます。");
             }
             else
             {
@@ -92,7 +97,7 @@ namespace SushidaAutoTyper
         private void CreateShortcutNo_Click(object sender, RoutedEventArgs e)
         {
             ShortcutPromptBanner.Visibility = Visibility.Collapsed;
-            Log("ホーム画面へのショートカット追加をスキップしました。");
+            Log("デスクトップショートカット作成をスキップしました。");
         }
 
         private bool CreateDesktopShortcut()
@@ -245,12 +250,13 @@ namespace SushidaAutoTyper
             _typingCancellationTokenSource = new CancellationTokenSource();
             var token = _typingCancellationTokenSource.Token;
 
+            // Focus game window ONCE on start
             if (_isRegionSelected && AutoFocusCheckBox.IsChecked == true)
             {
                 bool focused = NativeKeyboard.FocusTargetWindow(_selectedRegion.X + 10, _selectedRegion.Y + 10);
                 if (focused)
                 {
-                    Log("🎯 ゲーム画面にフォーカスを自動移動しました。");
+                    Log("🎯 ゲーム画面にフォーカスを移動しました。");
                 }
             }
 
