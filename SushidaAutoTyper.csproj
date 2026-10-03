@@ -7,8 +7,15 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <AssemblyTitle>SushidaAutoTyper Pro</AssemblyTitle>
-    <Product>Sushida &amp; Typing Game Auto-Typer Pro</Product>
+    <Product>SushidaAutoTyper Pro</Product>
+    <Company>youyouboydragon studio</Company>
+    <Authors>youyouboydragon studio</Authors>
+    <PublisherName>youyouboydragon studio</PublisherName>
+    <Copyright>Copyright © 2026 youyouboydragon studio. All rights reserved.</Copyright>
     <Description>High Speed Auto-Typing Application for Sushida, Unity Games, and Web Typing Games</Description>
+    <Version>1.0.0.0</Version>
+    <FileVersion>1.0.0.0</FileVersion>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
   </PropertyGroup>
 
 </Project>
